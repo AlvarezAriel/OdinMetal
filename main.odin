@@ -13,9 +13,10 @@ import "core:mem"
 import glm "core:math/linalg/glsl"
 
 
-W_WIDTH :: 512.0;
-W_HEIGHT :: 512.0;
-BRUSH_SIZE :: 16.0;
+W_WIDTH :: 1024.0;
+W_HEIGHT :: 1024.0;
+BRUSH_SIZE :: 32.0;
+N_INTERPOLATIONS :: 16;
 
 Camera_Data :: struct #align(16) {
 	translation:  glm.vec2,
@@ -24,6 +25,10 @@ Camera_Data :: struct #align(16) {
 FragmentUniform :: struct #align(16) {
 	cursor: [4]f32,
 	screen_size: [2]f32,
+}
+
+InterpolatorUniform :: struct #align(16) {
+	pos: [4]f32,
 }
 
 build_texture :: proc(device: ^MTL.Device) -> ^MTL.Texture {
@@ -91,6 +96,9 @@ metal_main :: proc() -> (err: ^NS.Error) {
 	camera_buffer := device->newBuffer(size_of(Camera_Data), {.StorageModeManaged})
 	defer camera_buffer->release()
 
+	interpolations_buffer := device->newBuffer(N_INTERPOLATIONS*size_of(InterpolatorUniform), {.StorageModeManaged})
+	defer interpolations_buffer->release()
+
 	uniform_buffer := device->newBuffer(size_of(FragmentUniform), {.StorageModeManaged})
 	defer uniform_buffer->release()
 
@@ -131,39 +139,54 @@ metal_main :: proc() -> (err: ^NS.Error) {
 		{ 1,  1, 0, 1},
 		{ 1, -1, 0, 1},
 	}
-	interpolator_stack : [100][2]f32 = {}
-	interpolator_stack_index : uint = 0
 
 	uniform_data := uniform_buffer->contentsAsType(FragmentUniform)
 	uniform_data.screen_size = { W_WIDTH, W_HEIGHT }
 
 	position_buffer := device->newBufferWithSlice(positions[:], {})
+	defer position_buffer->release()
 
 	texture := build_texture(device)
 	defer texture->release()
 
 	SDL.ShowWindow(window)
-
+	counter := 0
 	for quit := false; !quit;  {
+		
 		{
 			w, h: i32
 			SDL.GetWindowSize(window, &w, &h)
+			consumed := false
 			for e: SDL.Event; SDL.PollEvent(&e); {
 				#partial switch e.type {
 				case .MOUSEMOTION:
+					if(consumed) {
+						continue
+					}
+					consumed = true
+
 					new_pos : [2]f32 = {f32(e.motion.x), f32(e.motion.y)}
 					uniform_data.cursor.x = new_pos.x / f32(w);
 					uniform_data.cursor.y = new_pos.y / f32(h);
 
-					if(uniform_data.cursor.zw != new_pos) {
-						dist := glm.distance_vec2(uniform_data.cursor.zw, new_pos.xy)
-						brush_width :f32 = 4
-						n_points := dist / brush_width
-						
-						uniform_data.cursor.zw = new_pos
+					dist := glm.distance_vec2(uniform_data.cursor.zw, new_pos.xy)
+					brush_width :f32 = 4
+					section_dist := dist / (N_INTERPOLATIONS * 2)
+					direction := glm.normalize_vec2(uniform_data.cursor.zw - new_pos.xy)
+					interpolation_data := interpolations_buffer->contentsAsSlice([]InterpolatorUniform)[:N_INTERPOLATIONS]
+					counter += 1
+					for instance, idx in &interpolation_data {
+						interpolated_idx := idx * 2
+						instance.pos.xy = new_pos + (direction.xy * section_dist * f32(interpolated_idx))
+						instance.pos.zw = new_pos + (direction.xy * section_dist * f32(interpolated_idx + 1))
 					}
+					sz := NS.UInteger(len(interpolation_data)*size_of(interpolation_data[0]))
+					interpolations_buffer->didModifyRange(NS.Range_Make(0, sz))
+
+					uniform_data.cursor.zw = new_pos
+					//fmt.println("points:", counter, " motion X:", uniform_data.cursor.z, " Y:", uniform_data.cursor.w, "  Interpolations: ", len(interpolation_data));
+				
 					
-					fmt.println("motion X ", uniform_data.cursor.x, " Y: ", uniform_data.cursor.y);
 				case .QUIT: 
 					quit = true
 				case .KEYDOWN:
@@ -198,9 +221,10 @@ metal_main :: proc() -> (err: ^NS.Error) {
 		compute_encoder->setTexture(texture, 0)
 		compute_encoder->setBuffer(uniform_buffer, offset=0, index=0)
 		compute_encoder->setBuffer(camera_buffer, offset=0, index=1)
+		compute_encoder->setBuffer(interpolations_buffer, offset=0, index=2)
 	
-		grid_size := MTL.Size{BRUSH_SIZE, BRUSH_SIZE, 1}
-		thread_group_size := MTL.Size{NS.Integer(compute_pso->maxTotalThreadsPerThreadgroup()), 1, 1}
+		grid_size := MTL.Size{BRUSH_SIZE, BRUSH_SIZE*N_INTERPOLATIONS, 1}
+		thread_group_size := MTL.Size{BRUSH_SIZE, BRUSH_SIZE, 1}
 	
 		compute_encoder->dispatchThreads(grid_size, thread_group_size)
 		compute_encoder->endEncoding()
@@ -220,6 +244,7 @@ metal_main :: proc() -> (err: ^NS.Error) {
 
 		command_buffer->presentDrawable(drawable)
 		command_buffer->commit()
+		command_buffer->waitUntilCompleted()
 	}
 
 	return nil
