@@ -15,6 +15,7 @@ import glm "core:math/linalg/glsl"
 
 W_WIDTH :: 512.0;
 W_HEIGHT :: 512.0;
+BRUSH_SIZE :: 16.0;
 
 Camera_Data :: struct #align(16) {
 	translation:  glm.vec2,
@@ -130,25 +131,6 @@ metal_main :: proc() -> (err: ^NS.Error) {
 		{ 1,  1, 0, 1},
 		{ 1, -1, 0, 1},
 	}
-
-	// positions := [?][4]f32{
-	// 	{ 0,  W_HEIGHT, 0, 1},
-	// 	{0, 0, 0, 1},
-	// 	{ W_WIDTH, 0, 0, 1},
-
-	// 	{ 0,  W_HEIGHT, 0, 1},
-	// 	{ W_WIDTH,  W_HEIGHT, 0, 1},
-	// 	{ W_WIDTH, 0, 0, 1},
-	// }
-
-	colors := [?][4]f32{
-		{1, 1, 1, 1},
-		{0, 0, 0, 1},
-		{0, 0, 0, 1},
-		{0, 0, 0, 1},
-		{0, 0, 0, 1},
-	}
-
 	interpolator_stack : [100][2]f32 = {}
 	interpolator_stack_index : uint = 0
 
@@ -156,7 +138,6 @@ metal_main :: proc() -> (err: ^NS.Error) {
 	uniform_data.screen_size = { W_WIDTH, W_HEIGHT }
 
 	position_buffer := device->newBufferWithSlice(positions[:], {})
-	color_buffer    := device->newBufferWithSlice(colors[:],    {})
 
 	texture := build_texture(device)
 	defer texture->release()
@@ -167,11 +148,6 @@ metal_main :: proc() -> (err: ^NS.Error) {
 		{
 			w, h: i32
 			SDL.GetWindowSize(window, &w, &h)
-			//cursor.screen_size.x = f32(w);
-			//cursor.screen_size.y = f32(h);
-			
-			//camera_data := camera_buffer->contentsAsType(Camera_Data)
-
 			for e: SDL.Event; SDL.PollEvent(&e); {
 				#partial switch e.type {
 				case .MOUSEMOTION:
@@ -187,8 +163,6 @@ metal_main :: proc() -> (err: ^NS.Error) {
 						uniform_data.cursor.zw = new_pos
 					}
 					
-					//cursor.cursor = camera_data.perspective_transform * cursor.cursor;
-					
 					fmt.println("motion X ", uniform_data.cursor.x, " Y: ", uniform_data.cursor.y);
 				case .QUIT: 
 					quit = true
@@ -196,21 +170,8 @@ metal_main :: proc() -> (err: ^NS.Error) {
 					if e.key.keysym.sym == .ESCAPE {
 						quit = true
 					} 
-					// else if e.key.keysym.sym == .LEFT {
-					// 	camera_data.translation.x -= 1
-					// } else if e.key.keysym.sym == .RIGHT {
-					// 	camera_data.translation.x += 1
-					// } else if e.key.keysym.sym == .UP {
-					// 	camera_data.translation.y -= 1
-					// } else if e.key.keysym.sym == .DOWN {
-					// 	camera_data.translation.y += 1
-					// }
 				}
 			}
-			
-			//camera_data.perspective_transform = glm.mat4Ortho3d(0.0, f32(w), f32(h), 0.0,-5.0, 5.0)
-
-			//camera_buffer->didModifyRange(NS.Range_Make(0, size_of(Camera_Data)))
 		}
 
 		NS.scoped_autoreleasepool()
@@ -238,7 +199,7 @@ metal_main :: proc() -> (err: ^NS.Error) {
 		compute_encoder->setBuffer(uniform_buffer, offset=0, index=0)
 		compute_encoder->setBuffer(camera_buffer, offset=0, index=1)
 	
-		grid_size := MTL.Size{W_WIDTH, W_HEIGHT, 1}
+		grid_size := MTL.Size{BRUSH_SIZE, BRUSH_SIZE, 1}
 		thread_group_size := MTL.Size{NS.Integer(compute_pso->maxTotalThreadsPerThreadgroup()), 1, 1}
 	
 		compute_encoder->dispatchThreads(grid_size, thread_group_size)
@@ -249,8 +210,7 @@ metal_main :: proc() -> (err: ^NS.Error) {
 
 		render_encoder->setRenderPipelineState(pipeline_state)
 		render_encoder->setVertexBuffer(position_buffer, offset=0, index=0)
-		render_encoder->setVertexBuffer(color_buffer,    offset=0, index=1)
-		render_encoder->setVertexBuffer(camera_buffer,   offset=0, index=2)
+		render_encoder->setVertexBuffer(camera_buffer,   offset=0, index=1)
 
 		render_encoder->setFragmentBuffer(uniform_buffer, offset=0, index=0);
 		render_encoder->setFragmentTexture(texture, 1)
