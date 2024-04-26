@@ -16,7 +16,7 @@ import glm "core:math/linalg/glsl"
 W_WIDTH :: 1024.0;
 W_HEIGHT :: 1024.0;
 BRUSH_SIZE :: 32.0;
-N_INTERPOLATIONS :: 16;
+N_INTERPOLATIONS :: 1;
 
 Camera_Data :: struct #align(16) {
 	translation:  glm.vec2,
@@ -25,6 +25,10 @@ Camera_Data :: struct #align(16) {
 FragmentUniform :: struct #align(16) {
 	cursor: [4]f32,
 	screen_size: [2]f32,
+}
+
+ComputeUniform :: struct #align(16) {
+	line: [4]f32,
 }
 
 InterpolatorUniform :: struct #align(16) {
@@ -101,6 +105,9 @@ metal_main :: proc() -> (err: ^NS.Error) {
 
 	uniform_buffer := device->newBuffer(size_of(FragmentUniform), {.StorageModeManaged})
 	defer uniform_buffer->release()
+	
+	compute_uniform_buffer := device->newBuffer(size_of(ComputeUniform), {.StorageModeManaged})
+	defer compute_uniform_buffer->release()
 
 	compute_pso := build_compute_pipeline(device) or_return
 	defer compute_pso->release()
@@ -143,16 +150,22 @@ metal_main :: proc() -> (err: ^NS.Error) {
 	uniform_data := uniform_buffer->contentsAsType(FragmentUniform)
 	uniform_data.screen_size = { W_WIDTH, W_HEIGHT }
 
+	compute_uniform_data := compute_uniform_buffer->contentsAsType(ComputeUniform)
+	
+
 	position_buffer := device->newBufferWithSlice(positions[:], {})
 	defer position_buffer->release()
 
 	texture := build_texture(device)
 	defer texture->release()
 
+	shadow_texture := build_texture(device)
+	defer shadow_texture->release()
+
 	SDL.ShowWindow(window)
 	counter := 0
 	for quit := false; !quit;  {
-		
+		requires_computation := false
 		{
 			w, h: i32
 			SDL.GetWindowSize(window, &w, &h)
@@ -166,25 +179,20 @@ metal_main :: proc() -> (err: ^NS.Error) {
 					consumed = true
 
 					new_pos : [2]f32 = {f32(e.motion.x), f32(e.motion.y)}
+
+					compute_uniform_data.line = { 
+						uniform_data.cursor.z,
+						uniform_data.cursor.w,
+						new_pos.x,
+						new_pos.y
+					}
+
 					uniform_data.cursor.x = new_pos.x / f32(w);
 					uniform_data.cursor.y = new_pos.y / f32(h);
-
-					dist := glm.distance_vec2(uniform_data.cursor.zw, new_pos.xy)
-					brush_width :f32 = 4
-					section_dist := dist / (N_INTERPOLATIONS * 2)
-					direction := glm.normalize_vec2(uniform_data.cursor.zw - new_pos.xy)
-					interpolation_data := interpolations_buffer->contentsAsSlice([]InterpolatorUniform)[:N_INTERPOLATIONS]
-					counter += 1
-					for instance, idx in &interpolation_data {
-						interpolated_idx := idx * 2
-						instance.pos.xy = new_pos + (direction.xy * section_dist * f32(interpolated_idx))
-						instance.pos.zw = new_pos + (direction.xy * section_dist * f32(interpolated_idx + 1))
-					}
-					sz := NS.UInteger(len(interpolation_data)*size_of(interpolation_data[0]))
-					interpolations_buffer->didModifyRange(NS.Range_Make(0, sz))
-
 					uniform_data.cursor.zw = new_pos
-					//fmt.println("points:", counter, " motion X:", uniform_data.cursor.z, " Y:", uniform_data.cursor.w, "  Interpolations: ", len(interpolation_data));
+
+					
+					requires_computation = true
 				
 					
 				case .QUIT: 
@@ -214,20 +222,23 @@ metal_main :: proc() -> (err: ^NS.Error) {
 
 
 		// -------------------------------------------------------------------------------------------
+		if(requires_computation) {
+			requires_computation = false
+			compute_encoder := command_buffer->computeCommandEncoder()
 
-		compute_encoder := command_buffer->computeCommandEncoder()
-
-		compute_encoder->setComputePipelineState(compute_pso)
-		compute_encoder->setTexture(texture, 0)
-		compute_encoder->setBuffer(uniform_buffer, offset=0, index=0)
-		compute_encoder->setBuffer(camera_buffer, offset=0, index=1)
-		compute_encoder->setBuffer(interpolations_buffer, offset=0, index=2)
-	
-		grid_size := MTL.Size{BRUSH_SIZE, BRUSH_SIZE*N_INTERPOLATIONS, 1}
-		thread_group_size := MTL.Size{BRUSH_SIZE, BRUSH_SIZE, 1}
-	
-		compute_encoder->dispatchThreads(grid_size, thread_group_size)
-		compute_encoder->endEncoding()
+			compute_encoder->setComputePipelineState(compute_pso)
+			compute_encoder->setTexture(texture, 0)
+			compute_encoder->setTexture(shadow_texture, 1)
+			compute_encoder->setBuffer(compute_uniform_buffer, offset=0, index=0)
+			compute_encoder->setBuffer(camera_buffer, offset=0, index=1)
+			compute_encoder->setBuffer(interpolations_buffer, offset=0, index=2)
+		
+			grid_size := MTL.Size{W_WIDTH, W_HEIGHT, 1}
+			thread_group_size := MTL.Size{NS.Integer(compute_pso->maxTotalThreadsPerThreadgroup()), 1, 1}
+		
+			compute_encoder->dispatchThreads(grid_size, thread_group_size)
+			compute_encoder->endEncoding()
+		}
 		// -------------------------------------------------------------------------------------------
 		
 		render_encoder := command_buffer->renderCommandEncoderWithDescriptor(pass)
@@ -238,6 +249,7 @@ metal_main :: proc() -> (err: ^NS.Error) {
 
 		render_encoder->setFragmentBuffer(uniform_buffer, offset=0, index=0);
 		render_encoder->setFragmentTexture(texture, 1)
+		render_encoder->setFragmentTexture(shadow_texture, 2)
 		render_encoder->drawPrimitivesWithInstanceCount(.Triangle, 0, 6, 2);
 
 		render_encoder->endEncoding()
