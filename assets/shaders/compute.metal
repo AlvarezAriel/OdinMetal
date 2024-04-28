@@ -8,10 +8,6 @@ struct Uniforms {
 struct Camera_Data {
     float2 translation;
 };
-struct Instance_Data {
-    float4 pos;
-};
-
 // https://iquilezles.org/articles/smin
 // float smin( float a, float b, float k )
 // {
@@ -75,9 +71,8 @@ kernel void line_rasterizer(texture2d<half, access::read_write> tex        [[tex
                             uint2 threadgroup_position_in_grid             [[threadgroup_position_in_grid ]],
                             uint2 thread_position_in_threadgroup           [[thread_position_in_threadgroup ]],
                             uint2 threads_per_threadgroup                  [[threads_per_threadgroup ]],
-                            constant Uniforms *uni                         [[buffer(0) ]],
-                            device const Camera_Data& camera_data          [[buffer(1)]],
-                            device const Instance_Data* instance_data      [[buffer(2)]]
+                            constant Uniforms *uni                         [[buffer(0)]],
+                            device const Camera_Data& camera_data          [[buffer(1)]]
                             ) {
  
     if(uni->flags.x > 0.0) {
@@ -90,54 +85,15 @@ kernel void line_rasterizer(texture2d<half, access::read_write> tex        [[tex
         float distance_to_start = smoothstep(-brush_size, +brush_size, distance(current_pos, uni->line.xy));
 
         half4 prev_color = tex.read(gid);
-        half m;
 
         d = sqrt(d);
 
-        m = prev_color.r * d; 
+        half m = prev_color.r * d; 
         half commit = min(prev_color.g, prev_color.r);
 
         tex.write(half4(commit, m, min(prev_color.b, subline), 1.h), gid);
-        
-        // if(distance_to_start > brush_size/2) {
-        //     tex.write(half4(half3(color, 0.0, 0.0h), 1.h), gid);
-        // }
-
-        // float2 size = float2(grid_size);
-        // float2 current_pos = float2(gid);    
-        // float2 st = float2(gid) / size;    
-        // st *= zoom;
-        // float4 line = float4(uni->line.xy/ size, uni->line.zw/ size);
-        // line *= zoom;
-
-        // float d = 1. - clamp(sdOrientedBox(st * 0.5, line.xy * 0.5, line.zw * 0.5, 0.00001), 0., 1.);
-        // half heatline = (1. - clamp(sdOrientedBox(st * 0.4, line.xy * 0.4, line.zw * 0.4, 0.00001), 0., 1.));
-        // half4 prev_color = tex.read(gid);
-
-        // half display = prev_color.r; 
-
-        // half heat = smoothstep(0.1h, 1.0h, max(prev_color.b, heatline) * 0.9h);
-        // half shadow = max(prev_color.g, half(d));
-        // half field = prev_color.a;
-
-        // if(heat < 0.01) {
-        //     display = min(prev_color.r + shadow, 0.5h);
-        //     //field = clamp(half(prev_color.a+dShadow), 0.0h, 1.0h);
-        //     shadow = 0.h;
-        // } else {
-        //     // if(display > 0.h && shadow > 0.h) {
-        //     //     shadow = display + shadow;
-        //     //     //shadow = display;
-        //     // }
-        // }
-
-        // tex.write(half4(display, shadow, heat, field), gid);
     }
-
 }
-
-
-
 
 // GAUSSIAN KERNEL 5x5
             // half acc; 
