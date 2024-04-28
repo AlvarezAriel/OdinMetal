@@ -5,6 +5,7 @@ import MTL "vendor:darwin/Metal"
 import CA  "vendor:darwin/QuartzCore"
 
 import SDL "vendor:sdl2"
+import MU "vendor:microui"
 
 import "core:fmt"
 import "core:os"
@@ -24,11 +25,13 @@ Camera_Data :: struct #align(16) {
 
 FragmentUniform :: struct #align(16) {
 	cursor: [4]f32,
+	toggle_layer:[4]f32,
 	screen_size: [2]f32,
 }
 
 ComputeUniform :: struct #align(16) {
 	line: [4]f32,
+	flags: [4]f32,
 }
 
 InterpolatorUniform :: struct #align(16) {
@@ -70,7 +73,7 @@ metal_main :: proc() -> (err: ^NS.Error) {
 	defer SDL.Quit()
 
 	window := SDL.CreateWindow("Metal in Odin", 
-		SDL.WINDOWPOS_CENTERED, SDL.WINDOWPOS_CENTERED, 
+		SDL.WINDOWPOS_CENTERED_DISPLAY(1), SDL.WINDOWPOS_CENTERED_DISPLAY(1), 
 		W_WIDTH, W_HEIGHT, 
 		{.ALLOW_HIGHDPI, .HIDDEN, .RESIZABLE},
 	)
@@ -149,9 +152,10 @@ metal_main :: proc() -> (err: ^NS.Error) {
 
 	uniform_data := uniform_buffer->contentsAsType(FragmentUniform)
 	uniform_data.screen_size = { W_WIDTH, W_HEIGHT }
+	uniform_data.toggle_layer = { 1.0, 1.0, 1.0, 1.0 }
 
 	compute_uniform_data := compute_uniform_buffer->contentsAsType(ComputeUniform)
-	
+	compute_uniform_data.flags = { 1.0, 0.0, 0.0, 0.0 }
 
 	position_buffer := device->newBufferWithSlice(positions[:], {})
 	defer position_buffer->release()
@@ -164,16 +168,22 @@ metal_main :: proc() -> (err: ^NS.Error) {
 
 	SDL.ShowWindow(window)
 	counter := 0
+	requires_computation := true
+	is_first_point := true
 	for quit := false; !quit;  {
-		requires_computation := false
+
+
 		{
 			w, h: i32
 			SDL.GetWindowSize(window, &w, &h)
 			consumed := false
 			for e: SDL.Event; SDL.PollEvent(&e); {
 				#partial switch e.type {
+				case .FINGERMOTION:
+					fmt.println("FINGER!!!")	
 				case .MOUSEMOTION:
-					if(consumed) {
+					if(consumed || e.motion.state == 0) {
+						is_first_point = true
 						continue
 					}
 					consumed = true
@@ -191,17 +201,31 @@ metal_main :: proc() -> (err: ^NS.Error) {
 					uniform_data.cursor.y = new_pos.y / f32(h);
 					uniform_data.cursor.zw = new_pos
 
-					
-					requires_computation = true
-				
+					if(!is_first_point) {
+						requires_computation = true
+					}
+					is_first_point = false
 					
 				case .QUIT: 
 					quit = true
 				case .KEYDOWN:
-					if e.key.keysym.sym == .ESCAPE {
-						quit = true
-					} 
+					#partial switch e.key.keysym.sym {
+						case .ESCAPE: 
+							quit = true
+						case .R:
+							uniform_data.toggle_layer.r = 1.0 - uniform_data.toggle_layer.r
+						case .G:
+							uniform_data.toggle_layer.g = 1.0 - uniform_data.toggle_layer.g
+						case .B:
+							uniform_data.toggle_layer.b = 1.0 - uniform_data.toggle_layer.b
+						case .D:
+							uniform_data.toggle_layer.a = 1.0 - uniform_data.toggle_layer.a
+						case .SPACE:
+							requires_computation := true
+							compute_uniform_data.flags.x = 1.0;	
+					}
 				}
+				fmt.printfln("TYPE: ", e.type)
 			}
 		}
 
@@ -257,6 +281,9 @@ metal_main :: proc() -> (err: ^NS.Error) {
 		command_buffer->presentDrawable(drawable)
 		command_buffer->commit()
 		command_buffer->waitUntilCompleted()
+
+		compute_uniform_data.flags.x = 0.0;
+		requires_computation = false;
 	}
 
 	return nil

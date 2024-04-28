@@ -1,6 +1,7 @@
 using namespace metal;
 struct Uniforms {
     float4 cursor;
+    float4 toggle_layer;
     float2 screen_size;
 };
 struct ColoredVertex {
@@ -42,7 +43,13 @@ fragment float4 fragment_main(
     float4 colorSample = float4(tex.sample(simpleSampler, st));
     float4 shadowSample = float4(shadow.sample(simpleSampler, st));
     
-    //float3 color = float3(renderColor, 0.0, 0.0);
-    float3 color = float3(colorSample.r, 0.0, 0.0);
-    return float4(colorSample.xyz, 1.0) + float4(float3(circle(st - cur, 0.0005)) ,1.0);
+    if(uni->toggle_layer.a > 0.0) {
+        // real display
+        float c = smoothstep(0.2, 0.3, colorSample.r) * smoothstep(0.3, 0.4, colorSample.g) * smoothstep(0.3, 0.4, colorSample.b);
+        return float4(float3(c), 1.0);
+    } else {
+        // Debug display
+        float4 color = float4(colorSample.rgb, 1.0);
+        return (color * uni->toggle_layer) + float4(float3(circle(st - cur, 0.0005)) ,1.0);
+    }
 }
