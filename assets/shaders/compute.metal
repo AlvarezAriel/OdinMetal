@@ -90,6 +90,7 @@ kernel void line_rasterizer(texture2d<half, access::read_write> tex        [[tex
 
         half m = prev_color.r * d; 
         half commit = min(prev_color.g, prev_color.r);
+        
 
         tex.write(half4(commit, m, min(prev_color.b, subline), 1.h), gid);
     }
