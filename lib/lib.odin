@@ -8,6 +8,7 @@ import MU "vendor:microui"
 import SDL "vendor:sdl2"
 
 import "core:fmt"
+import "core:time"
 import "core:math"
 import glm "core:math/linalg/glsl"
 import "core:mem"
@@ -124,9 +125,18 @@ metal_main :: proc() -> (err: ^NS.Error) {
 	counter := 0
 	requires_computation := true
 	is_first_point := true
+
+	start_tick := time.tick_now()
+	next_time := SDL.GetTicks() + 30
+
 	for quit := false; !quit; {
 
+		SDL.Delay(time_left(next_time))
+        next_time += 30;
 
+		duration := time.tick_since(start_tick)
+		t := f32(time.duration_seconds(duration))
+		uniform_data.toggle_layer.x = t
 		{
 			w, h: i32
 			SDL.GetWindowSize(window, &w, &h)
@@ -166,20 +176,11 @@ metal_main :: proc() -> (err: ^NS.Error) {
 					#partial switch e.key.keysym.sym {
 					case .ESCAPE:
 						quit = true
-					case .R:
-						uniform_data.toggle_layer.r = 1.0 - uniform_data.toggle_layer.r
-					case .G:
-						uniform_data.toggle_layer.g = 1.0 - uniform_data.toggle_layer.g
-					case .B:
-						uniform_data.toggle_layer.b = 1.0 - uniform_data.toggle_layer.b
-					case .D:
-						uniform_data.toggle_layer.a = 1.0 - uniform_data.toggle_layer.a
 					case .SPACE:
 						requires_computation := true
 						compute_uniform_data.flags.x = 1.0
 					}
 				}
-				fmt.printfln("TYPE: ", e.type)
 			}
 		}
 
@@ -197,7 +198,6 @@ metal_main :: proc() -> (err: ^NS.Error) {
 		color_attachment->setTexture(drawable->texture())
 
 		command_buffer := appState.command_queue->commandBuffer()
-
 
 		// -------------------------------------------------------------------------------------------
 		if (requires_computation) {
@@ -244,4 +244,14 @@ metal_main :: proc() -> (err: ^NS.Error) {
 	}
 
 	return nil
+}
+
+time_left :: proc(next_time: u32) -> u32
+{
+    now := SDL.GetTicks()
+    if(next_time <= now) {
+        return 0
+	} else {
+        return next_time - now;
+	}
 }
