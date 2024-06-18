@@ -15,7 +15,7 @@ constant float c_superFar = 10000.0f;
 constant int c_numBounces = 8;
 
 // how many renders per frame - to get around the vsync limitation.
-constant int c_numRendersPerFrame = 1;
+constant int c_numRendersPerFrame = 8.0;
 
 constant float c_pi = 3.14159265359f;
 constant float c_twopi = 2.0f * c_pi;
@@ -56,6 +56,46 @@ struct SRayHitInfo
     float3 albedo;
     float3 emissive;
 };
+
+float3 LessThan(float3 f, float value)
+{
+    return float3(
+        (f.x < value) ? 1.0f : 0.0f,
+        (f.y < value) ? 1.0f : 0.0f,
+        (f.z < value) ? 1.0f : 0.0f);
+}
+ 
+float3 LinearToSRGB(float3 rgb)
+{
+    rgb = clamp(rgb, 0.0f, 1.0f);
+ 
+    return mix(
+        pow(rgb, float3(1.0f / 2.4f)) * 1.055f - 0.055f,
+        rgb * 12.92f,
+        LessThan(rgb, 0.0031308f)
+    );
+}
+ 
+float3 SRGBToLinear(float3 rgb)
+{
+    rgb = clamp(rgb, 0.0f, 1.0f);
+ 
+    return mix(
+        pow(((rgb + 0.055f) / 1.055f), float3(2.4f)),
+        rgb / 12.92f,
+        LessThan(rgb, 0.04045f)
+    );
+}
+
+float3 ACESFilm(float3 x)
+{
+    float a = 2.51f;
+    float b = 0.03f;
+    float c = 2.43f;
+    float d = 0.59f;
+    float e = 0.14f;
+    return clamp((x*(a*x + b)) / (x*(c*x + d) + e), 0.0f, 1.0f);
+}
 
 float ScalarTriple(float3 u, float3 v, float3 w)
 {

@@ -17,6 +17,7 @@ struct Voxel_Data {
 
 // camera FOV
 constant float c_FOVDegrees = 60.0f;
+constant float c_exposure = 0.5;
 
 void TestSceneTrace(float3 rayPos, float3 rayDir, thread SRayHitInfo *hitInfo)
 {    
@@ -84,7 +85,7 @@ void TestSceneTrace(float3 rayPos, float3 rayDir, thread SRayHitInfo *hitInfo)
         float3 D = float3( 12.5f,  12.6f, 25.0f) + sceneTranslation;
         if (TestQuadTrace(rayPos, rayDir, hitInfo, A, B, C, D))
         {
-            hitInfo->albedo = float3(0.1f, 0.7f, 0.1f);
+            hitInfo->albedo = float3(0.1f, 0.5f, 0.1f);
             hitInfo->emissive = float3(0.0f, 0.0f, 0.0f);
         }        
     }    
@@ -104,19 +105,19 @@ void TestSceneTrace(float3 rayPos, float3 rayDir, thread SRayHitInfo *hitInfo)
     
 	if (TestSphereTrace(rayPos, rayDir, hitInfo, float4(-9.0f, -9.5f, 20.0f, 3.0f)+sceneTranslation4))
     {
-        hitInfo->albedo = float3(0.9f, 0.9f, 0.75f);
+        hitInfo->albedo = float3(0.9f, 0.9f, 0.50f);
         hitInfo->emissive = float3(0.0f, 0.0f, 0.0f);        
     } 
     
 	if (TestSphereTrace(rayPos, rayDir, hitInfo, float4(0.0f, -9.5f, 20.0f, 3.0f)+sceneTranslation4))
     {
-        hitInfo->albedo = float3(0.9f, 0.75f, 0.9f);
+        hitInfo->albedo = float3(0.9f, 0.50f, 0.9f);
         hitInfo->emissive = float3(0.0f, 0.0f, 0.0f);        
     }    
     
 	if (TestSphereTrace(rayPos, rayDir, hitInfo, float4(9.0f, -9.5f, 20.0f, 3.0f)+sceneTranslation4))
     {
-        hitInfo->albedo = float3(0.75f, 0.9f, 0.9f);
+        hitInfo->albedo = float3(0.50f, 0.9f, 0.9f);
         hitInfo->emissive = float3(0.0f, 0.0f, 0.0f);
     }         
 }
@@ -185,28 +186,45 @@ kernel void line_rasterizer(texture2d<half, access::read_write> tex        [[tex
 
     float3 rayPosition = float3(0.0f, 0.0f, 0.0f);
     float cameraDistance = 1.0f / tan(c_FOVDegrees * 0.5f * c_pi / 180.0f);
+
+
+    // calculate subpixel camera jitter for anti aliasing
+    float2 jitter = float2(RandomFloat01(&rngState), RandomFloat01(&rngState)) - 0.5f;
+    
     // calculate coordinates of the ray target on the imaginary pixel plane.
     // -1 to +1 on x,y axis. 1 unit away on the z axis
-    float3 rayTarget = float3((fragCoord/iResolution.xy) * 2.0f - 1.0f, cameraDistance);
-     
-     float aspectRatio = iResolution.x / iResolution.y;
+    float3 rayTarget = float3(((fragCoord+jitter)/iResolution.xy) * 2.0f - 1.0f, cameraDistance);
+
+    float aspectRatio = iResolution.x / iResolution.y;
     rayTarget.y /= -aspectRatio;
 
     // calculate a normalized vector for the ray direction.
     // it's pointing from the ray position to the ray target.
     float3 rayDir = normalize(rayTarget - rayPosition);
 
-    float3 color = GetColorForRay(rayPosition, rayDir, &rngState);
+    // raytrace for this pixel
+    float3 color = float3(0.0f, 0.0f, 0.0f);
+    for (int index = 0; index < c_numRendersPerFrame; ++index) {
+    	color += GetColorForRay(rayPosition, rayDir, &rngState);
+    }
+    color = color / float(c_numRendersPerFrame);
  
      // average the frames together
-    half4 lastFrameColor = tex.read(gid);
-    color = mix(float3(lastFrameColor.rgb), color, 1.0f / float(iFrame+1));
+    float3 lastFrameColor = float3(tex.read(gid).rgb);
+    color = mix(lastFrameColor, color, 1.0f / float(iFrame+1));
 
-    // show the ray direction
     fragColor = float4(color, 1.0f);
 
     //===========================================================
     tex.write(half4(fragColor), gid);
+
+    // apply exposure (how long the shutter is open)
+    color *= c_exposure;
+    // convert unbounded HDR color range to SDR color range
+    color = ACESFilm(color);
+    // convert from linear to sRGB for display
+    fragColor = float4(LinearToSRGB(color), 1.0f);
+    shadow_tex.write(half4(fragColor), gid);
 }
 
 // TODO: 

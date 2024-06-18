@@ -39,13 +39,25 @@ fragment half4 fragment_main(
     texture2d<half, access::sample> shadow [[texture(2)]]
 ) {
     float2 uv = (vert.position.xy) / uni->screen_size.y;
-    float3 color = float3(tex.sample(textureSampler, uv).rgb);
+    float3 color = float3(shadow.sample(textureSampler, uv).rgb);
+    //const float UNIT = 1.0 / 1024;
+    // float3 color = float3(0.0); 
+    // color += float3(tex.sample(textureSampler, uv + float2(-UNIT, -UNIT)).rgb);
+    // color += float3(tex.sample(textureSampler, uv + float2( 0.0, -UNIT)).rgb);
+    // color += float3(tex.sample(textureSampler, uv + float2( UNIT, -UNIT)).rgb);
+    // color += float3(tex.sample(textureSampler, uv + float2(-UNIT,  0.0)).rgb);
+    // color += float3(tex.sample(textureSampler, uv + float2( 0.0,  0.0)).rgb) * 3;
+    // color += float3(tex.sample(textureSampler, uv + float2( UNIT,  0.0)).rgb);
+    // color += float3(tex.sample(textureSampler, uv + float2(-UNIT,  UNIT)).rgb);
+    // color += float3(tex.sample(textureSampler, uv + float2( 0.0,  UNIT)).rgb);
+    // color += float3(tex.sample(textureSampler, uv + float2( UNIT,  UNIT)).rgb);
+    // color = color/ 11.0;
 
-         // gamma and postpro
-    color = pow(color,float3(0.4545));
-    color *= 0.9;
-    color = clamp(color,0.0,1.0);
-    color = color*color*(3.0-2.0*color);
+    // gamma and postpro
+    // color = pow(color,float3(0.4545));
+    // color *= 0.9;
+    // color = clamp(color,0.0,1.0);
+    //color = color*color*(3.0-2.0*color);
 
     return half4(half3(color.rgb), 1.0);
 }
