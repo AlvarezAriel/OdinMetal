@@ -49,12 +49,19 @@ float3 RandomUnitVector(thread RgnState *state)
     return float3(x, y, z);
 }
 
+struct SMaterialInfo {
+    float percentSpecular; // 0..1
+    float roughness; // 0..1
+    float3 specularColor; // 0..1
+    float3 albedo;
+    float3 emissive;
+};
+
 struct SRayHitInfo
 {
     float dist;
     float3 normal;
-    float3 albedo;
-    float3 emissive;
+    SMaterialInfo material;
 };
 
 float3 LessThan(float3 f, float value)

@@ -25,6 +25,13 @@ void TestSceneTrace(float3 rayPos, float3 rayDir, thread SRayHitInfo *hitInfo)
     float3 sceneTranslation = float3(0.0f, 0.0f, 10.0f);
     float4 sceneTranslation4 = float4(sceneTranslation, 0.0f);
     
+    SMaterialInfo basematerial;
+    basematerial.emissive = float3(0.0f, 0.0f, 0.0f);
+    basematerial.albedo = float3(0.7f, 0.7f, 0.7f);
+    basematerial.percentSpecular = 0.0; // 0..1
+    basematerial.roughness = 1.0; // 0..1
+    basematerial.specularColor = float3(1.0); 
+    
    	// back wall
     {
         float3 A = float3(-12.6f, -12.6f, 25.0f) + sceneTranslation;
@@ -33,8 +40,7 @@ void TestSceneTrace(float3 rayPos, float3 rayDir, thread SRayHitInfo *hitInfo)
         float3 D = float3(-12.6f,  12.6f, 25.0f) + sceneTranslation;
         if (TestQuadTrace(rayPos, rayDir, hitInfo, A, B, C, D))
         {
-            hitInfo->albedo = float3(0.7f, 0.7f, 0.7f);
-            hitInfo->emissive = float3(0.0f, 0.0f, 0.0f);
+            hitInfo->material = basematerial;
         }
 	}    
     
@@ -46,8 +52,7 @@ void TestSceneTrace(float3 rayPos, float3 rayDir, thread SRayHitInfo *hitInfo)
         float3 D = float3(-12.6f, -12.45f, 15.0f) + sceneTranslation;
         if (TestQuadTrace(rayPos, rayDir, hitInfo, A, B, C, D))
         {
-            hitInfo->albedo = float3(0.7f, 0.7f, 0.7f);
-            hitInfo->emissive = float3(0.0f, 0.0f, 0.0f);
+            hitInfo->material = basematerial;
         }        
     }
     
@@ -59,8 +64,7 @@ void TestSceneTrace(float3 rayPos, float3 rayDir, thread SRayHitInfo *hitInfo)
         float3 D = float3(-12.6f, 12.5f, 15.0f) + sceneTranslation;
         if (TestQuadTrace(rayPos, rayDir, hitInfo, A, B, C, D))
         {
-            hitInfo->albedo = float3(0.7f, 0.7f, 0.7f);
-            hitInfo->emissive = float3(0.0f, 0.0f, 0.0f);
+            hitInfo->material = basematerial;
         }        
     }    
     
@@ -72,8 +76,8 @@ void TestSceneTrace(float3 rayPos, float3 rayDir, thread SRayHitInfo *hitInfo)
         float3 D = float3(-12.5f,  12.6f, 25.0f) + sceneTranslation;
         if (TestQuadTrace(rayPos, rayDir, hitInfo, A, B, C, D))
         {
-            hitInfo->albedo = float3(0.7f, 0.1f, 0.1f);
-            hitInfo->emissive = float3(0.0f, 0.0f, 0.0f);
+            hitInfo->material = basematerial;
+            hitInfo->material.albedo = float3(0.7f, 0.1f, 0.1f);
         }        
     }
     
@@ -85,8 +89,8 @@ void TestSceneTrace(float3 rayPos, float3 rayDir, thread SRayHitInfo *hitInfo)
         float3 D = float3( 12.5f,  12.6f, 25.0f) + sceneTranslation;
         if (TestQuadTrace(rayPos, rayDir, hitInfo, A, B, C, D))
         {
-            hitInfo->albedo = float3(0.1f, 0.5f, 0.1f);
-            hitInfo->emissive = float3(0.0f, 0.0f, 0.0f);
+            hitInfo->material = basematerial;
+            hitInfo->material.albedo = float3(0.1f, 0.7f, 0.1f);
         }        
     }    
     
@@ -98,28 +102,59 @@ void TestSceneTrace(float3 rayPos, float3 rayDir, thread SRayHitInfo *hitInfo)
         float3 D = float3(-5.0f, 12.4f,  17.5f) + sceneTranslation;
         if (TestQuadTrace(rayPos, rayDir, hitInfo, A, B, C, D))
         {
-            hitInfo->albedo = float3(0.0f, 0.0f, 0.0f);
-            hitInfo->emissive = float3(1.0f, 0.9f, 0.7f) * 20.0f;
+            hitInfo->material = basematerial;
+            hitInfo->material.albedo = float3(0.0f, 0.0f, 0.0f);
+            hitInfo->material.emissive = float3(1.0f, 0.9f, 0.7f) * 20.0f;
         }        
     }
     
 	if (TestSphereTrace(rayPos, rayDir, hitInfo, float4(-9.0f, -9.5f, 20.0f, 3.0f)+sceneTranslation4))
     {
-        hitInfo->albedo = float3(0.9f, 0.9f, 0.50f);
-        hitInfo->emissive = float3(0.0f, 0.0f, 0.0f);        
+        hitInfo->material = basematerial;
+        hitInfo->material.albedo = float3(0.9f, 0.9f, 0.5f);
+        hitInfo->material.roughness = 0.8; // 0..1
+        hitInfo->material.percentSpecular = 0.2;
+        hitInfo->material.specularColor = float3(0.9f, 0.9f, 0.5f);  
     } 
     
 	if (TestSphereTrace(rayPos, rayDir, hitInfo, float4(0.0f, -9.5f, 20.0f, 3.0f)+sceneTranslation4))
     {
-        hitInfo->albedo = float3(0.9f, 0.50f, 0.9f);
-        hitInfo->emissive = float3(0.0f, 0.0f, 0.0f);        
+        hitInfo->material = basematerial;
+        hitInfo->material.albedo = float3(0.9f, 0.5f, 0.9f);
+        hitInfo->material.roughness = 0.5; // 0..1
+        hitInfo->material.percentSpecular = 0.5;
+        hitInfo->material.specularColor = float3(0.9f, 0.9f, 0.5f);  
     }    
     
 	if (TestSphereTrace(rayPos, rayDir, hitInfo, float4(9.0f, -9.5f, 20.0f, 3.0f)+sceneTranslation4))
     {
-        hitInfo->albedo = float3(0.50f, 0.9f, 0.9f);
-        hitInfo->emissive = float3(0.0f, 0.0f, 0.0f);
-    }         
+        hitInfo->material = basematerial;
+        hitInfo->material.albedo = float3(0.50f, 0.9f, 0.9f);
+        hitInfo->material.roughness = 0.01; // 0..1
+        hitInfo->material.percentSpecular = 0.8;
+        hitInfo->material.specularColor = float3(0.2, 0.2, 0.9);
+    }     
+
+    if (TestSphereTrace(rayPos, rayDir, hitInfo, float4(4.5f, -11.0f, 23.0f, 1.0f)+sceneTranslation4))
+    {
+        hitInfo->material = basematerial;
+        hitInfo->material.albedo = float3(0.50f, 0.9f, 0.9f);
+        hitInfo->material.roughness = 0.01; // 0..1
+        hitInfo->material.percentSpecular = 0.8;
+        hitInfo->material.specularColor = float3(0.2, 0.2, 0.9);
+        hitInfo->material.emissive = float3(0.2, 0.2, 0.9) * 4.0;
+
+    }     
+    if (TestSphereTrace(rayPos, rayDir, hitInfo, float4(-4.5f, -11.0f, 17.0f, 1.0f)+sceneTranslation4))
+    {
+        hitInfo->material = basematerial;
+        hitInfo->material.albedo = float3(0.50f, 0.9f, 0.9f);
+        hitInfo->material.roughness = 0.01; // 0..1
+        hitInfo->material.percentSpecular = 0.8;
+        hitInfo->material.specularColor = float3(0.2, 0.2, 0.9);
+        hitInfo->material.emissive = float3(0.9, 0.9, 0.2) * 3.0;
+
+    }    
 }
  
 float3 GetColorForRay(float3 startRayPos, float3 startRayDir, thread RgnState *rngState)
@@ -147,14 +182,24 @@ float3 GetColorForRay(float3 startRayPos, float3 startRayDir, thread RgnState *r
 		// update the ray position
         rayPos = (rayPos + rayDir * hitInfo.dist) + hitInfo.normal * c_rayPosNormalNudge;
         
-        // calculate new ray direction, in a cosine weighted hemisphere oriented at normal
-        rayDir = normalize(hitInfo.normal + RandomUnitVector(rngState));        
+        // calculate whether we are going to do a diffuse or specular reflection ray
+        float doSpecular = (RandomFloat01(rngState) < hitInfo.material.percentSpecular) ? 1.0f : 0.0f;
         
-		// add in emissive lighting
-        ret += hitInfo.emissive * throughput;
+        // Calculate a new ray direction.
+        // Diffuse uses a normal oriented cosine weighted hemisphere sample.
+        // Perfectly smooth specular uses the reflection ray.
+        // Rough (glossy) specular lerps from the smooth specular to the rough diffuse by the material roughness squared
+        // Squaring the roughness is just a convention to make roughness feel more linear perceptually.
+        float3 diffuseRayDir = normalize(hitInfo.normal + RandomUnitVector(rngState));
+        float3 specularRayDir = reflect(rayDir, hitInfo.normal);
+        specularRayDir = normalize(mix(specularRayDir, diffuseRayDir, hitInfo.material.roughness * hitInfo.material.roughness));
+        rayDir = mix(diffuseRayDir, specularRayDir, doSpecular);
+        
+        // add in emissive lighting
+        ret += hitInfo.material.emissive * throughput;
         
         // update the colorMultiplier
-        throughput *= hitInfo.albedo;      
+        throughput *= mix(hitInfo.material.albedo, hitInfo.material.specularColor, doSpecular);   
     }
  
     // return pixel color
