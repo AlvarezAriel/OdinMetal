@@ -1,2 +1,2 @@
 run:
-	odin run .
+	odin run . -debug

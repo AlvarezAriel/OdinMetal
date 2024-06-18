@@ -1,69 +1,166 @@
 #include <metal_stdlib>
+#import "basics.metal"
 using namespace metal;
 
 struct Uniforms {
-    float4 line;
+    float4 cursor;
     float4 flags;
 };
+
 struct Camera_Data {
-    float2 translation;
+    float4x4 look;
 };
-// https://iquilezles.org/articles/smin
-// float smin( float a, float b, float k )
-// {
-//     k *= 1.0;
-//     float r = exp2(-a/k) + exp2(-b/k);
-//     return -k*log2(r);
-// }
 
-half sigmoidsmin( half a, half b, half k )
-{
-    k *= log(2.0h);
-    half x = (b-a)/k;
-    half g = x/(1.0h-exp2(-x));
-    return b - k * g;
+struct Voxel_Data {
+	uint16_t points[16][16];
+};
+
+// camera FOV
+constant float c_FOVDegrees = 60.0f;
+
+void TestSceneTrace(float3 rayPos, float3 rayDir, thread SRayHitInfo *hitInfo)
+{    
+    // to move the scene around, since we can't move the camera yet
+    float3 sceneTranslation = float3(0.0f, 0.0f, 10.0f);
+    float4 sceneTranslation4 = float4(sceneTranslation, 0.0f);
+    
+   	// back wall
+    {
+        float3 A = float3(-12.6f, -12.6f, 25.0f) + sceneTranslation;
+        float3 B = float3( 12.6f, -12.6f, 25.0f) + sceneTranslation;
+        float3 C = float3( 12.6f,  12.6f, 25.0f) + sceneTranslation;
+        float3 D = float3(-12.6f,  12.6f, 25.0f) + sceneTranslation;
+        if (TestQuadTrace(rayPos, rayDir, hitInfo, A, B, C, D))
+        {
+            hitInfo->albedo = float3(0.7f, 0.7f, 0.7f);
+            hitInfo->emissive = float3(0.0f, 0.0f, 0.0f);
+        }
+	}    
+    
+    // floor
+    {
+        float3 A = float3(-12.6f, -12.45f, 25.0f) + sceneTranslation;
+        float3 B = float3( 12.6f, -12.45f, 25.0f) + sceneTranslation;
+        float3 C = float3( 12.6f, -12.45f, 15.0f) + sceneTranslation;
+        float3 D = float3(-12.6f, -12.45f, 15.0f) + sceneTranslation;
+        if (TestQuadTrace(rayPos, rayDir, hitInfo, A, B, C, D))
+        {
+            hitInfo->albedo = float3(0.7f, 0.7f, 0.7f);
+            hitInfo->emissive = float3(0.0f, 0.0f, 0.0f);
+        }        
+    }
+    
+    // cieling
+    {
+        float3 A = float3(-12.6f, 12.5f, 25.0f) + sceneTranslation;
+        float3 B = float3( 12.6f, 12.5f, 25.0f) + sceneTranslation;
+        float3 C = float3( 12.6f, 12.5f, 15.0f) + sceneTranslation;
+        float3 D = float3(-12.6f, 12.5f, 15.0f) + sceneTranslation;
+        if (TestQuadTrace(rayPos, rayDir, hitInfo, A, B, C, D))
+        {
+            hitInfo->albedo = float3(0.7f, 0.7f, 0.7f);
+            hitInfo->emissive = float3(0.0f, 0.0f, 0.0f);
+        }        
+    }    
+    
+    // left wall
+    {
+        float3 A = float3(-12.5f, -12.6f, 25.0f) + sceneTranslation;
+        float3 B = float3(-12.5f, -12.6f, 15.0f) + sceneTranslation;
+        float3 C = float3(-12.5f,  12.6f, 15.0f) + sceneTranslation;
+        float3 D = float3(-12.5f,  12.6f, 25.0f) + sceneTranslation;
+        if (TestQuadTrace(rayPos, rayDir, hitInfo, A, B, C, D))
+        {
+            hitInfo->albedo = float3(0.7f, 0.1f, 0.1f);
+            hitInfo->emissive = float3(0.0f, 0.0f, 0.0f);
+        }        
+    }
+    
+    // right wall 
+    {
+        float3 A = float3( 12.5f, -12.6f, 25.0f) + sceneTranslation;
+        float3 B = float3( 12.5f, -12.6f, 15.0f) + sceneTranslation;
+        float3 C = float3( 12.5f,  12.6f, 15.0f) + sceneTranslation;
+        float3 D = float3( 12.5f,  12.6f, 25.0f) + sceneTranslation;
+        if (TestQuadTrace(rayPos, rayDir, hitInfo, A, B, C, D))
+        {
+            hitInfo->albedo = float3(0.1f, 0.7f, 0.1f);
+            hitInfo->emissive = float3(0.0f, 0.0f, 0.0f);
+        }        
+    }    
+    
+    // light
+    {
+        float3 A = float3(-5.0f, 12.4f,  22.5f) + sceneTranslation;
+        float3 B = float3( 5.0f, 12.4f,  22.5f) + sceneTranslation;
+        float3 C = float3( 5.0f, 12.4f,  17.5f) + sceneTranslation;
+        float3 D = float3(-5.0f, 12.4f,  17.5f) + sceneTranslation;
+        if (TestQuadTrace(rayPos, rayDir, hitInfo, A, B, C, D))
+        {
+            hitInfo->albedo = float3(0.0f, 0.0f, 0.0f);
+            hitInfo->emissive = float3(1.0f, 0.9f, 0.7f) * 20.0f;
+        }        
+    }
+    
+	if (TestSphereTrace(rayPos, rayDir, hitInfo, float4(-9.0f, -9.5f, 20.0f, 3.0f)+sceneTranslation4))
+    {
+        hitInfo->albedo = float3(0.9f, 0.9f, 0.75f);
+        hitInfo->emissive = float3(0.0f, 0.0f, 0.0f);        
+    } 
+    
+	if (TestSphereTrace(rayPos, rayDir, hitInfo, float4(0.0f, -9.5f, 20.0f, 3.0f)+sceneTranslation4))
+    {
+        hitInfo->albedo = float3(0.9f, 0.75f, 0.9f);
+        hitInfo->emissive = float3(0.0f, 0.0f, 0.0f);        
+    }    
+    
+	if (TestSphereTrace(rayPos, rayDir, hitInfo, float4(9.0f, -9.5f, 20.0f, 3.0f)+sceneTranslation4))
+    {
+        hitInfo->albedo = float3(0.75f, 0.9f, 0.9f);
+        hitInfo->emissive = float3(0.0f, 0.0f, 0.0f);
+    }         
 }
-float circularsmin( float a, float b, float k )
+ 
+float3 GetColorForRay(float3 startRayPos, float3 startRayDir, thread RgnState *rngState)
 {
-    k *= 1.0/(1.0-sqrt(0.5));
-    float h = max( k-abs(a-b), 0.0 )/k;
-    return min(a,b) - k*0.5*(1.0+h-sqrt(1.0-h*(h-2.0)));
+    // initialize
+    float3 ret = float3(0.0f, 0.0f, 0.0f);
+    float3 throughput = float3(1.0f, 1.0f, 1.0f);
+    float3 rayPos = startRayPos;
+    float3 rayDir = startRayDir;
+    
+    for (int bounceIndex = 0; bounceIndex <= c_numBounces; ++bounceIndex)
+    {
+        // shoot a ray out into the world
+        SRayHitInfo hitInfo;
+        hitInfo.dist = c_superFar;
+        TestSceneTrace(rayPos, rayDir, &hitInfo);
+        
+        // if the ray missed, we are done
+        if (hitInfo.dist == c_superFar)
+        {
+            ret += float3(0.3,0.2,0.1) * throughput;
+            break;
+        }
+        
+		// update the ray position
+        rayPos = (rayPos + rayDir * hitInfo.dist) + hitInfo.normal * c_rayPosNormalNudge;
+        
+        // calculate new ray direction, in a cosine weighted hemisphere oriented at normal
+        rayDir = normalize(hitInfo.normal + RandomUnitVector(rngState));        
+        
+		// add in emissive lighting
+        ret += hitInfo.emissive * throughput;
+        
+        // update the colorMultiplier
+        throughput *= hitInfo.albedo;      
+    }
+ 
+    // return pixel color
+    return ret;
 }
 
-half halfsmin( half a, half b, half k )
-{
-    k *= 1.0h;
-    half r = exp2(-a/k) + exp2(-b/k);
-    return -k*log2(r);
-}
-
-float sdSegment(float2 p, float2 a, float2 b, float r)
-{
-    float2 pa = p-a, ba = b-a;
-    float h = clamp(dot(pa,ba)/dot(ba,ba), 0.0, 1.0);
-    return length( pa - ba*h ) - r;
-}
-
-float sdOrientedBox(float2 p, float2 a, float2 b, float th )
-{
-    float l = length(b-a);
-    float2  d = (b-a)/l;
-    float2  q = (p-(a+b)*0.5);
-          q = float2x2(d.x,-d.y,d.y,d.x)*q;
-          q = abs(q)-float2(l,th)*0.9;
-    return length(max(q,0.0)) + min(max(q.x,q.y),0.0);    
-}
-
-half smin( half a, half b, half k )
-{
-    k *= 16.0/3.0;
-    half x = (b-a)/k;
-    half g = (x> 1.0) ? x :
-              (x<-1.0) ? 0.0 :
-              (x+1.0)*(x+1.0)*(3.0-x*(x-2.0))/16.0;
-    return b - k * g;
-}
-
+ 
 kernel void line_rasterizer(texture2d<half, access::read_write> tex        [[texture(0)]],
                             texture2d<half, access::read_write> shadow_tex [[texture(1)]],
                             uint2 gid                                      [[thread_position_in_grid]],
@@ -71,62 +168,48 @@ kernel void line_rasterizer(texture2d<half, access::read_write> tex        [[tex
                             uint2 threadgroup_position_in_grid             [[threadgroup_position_in_grid ]],
                             uint2 thread_position_in_threadgroup           [[thread_position_in_threadgroup ]],
                             uint2 threads_per_threadgroup                  [[threads_per_threadgroup ]],
-                            constant Uniforms *uni                         [[buffer(0)]],
-                            device const Camera_Data& camera_data          [[buffer(1)]]
+                            device const Uniforms *uni                     [[buffer(0)]],
+                            device const Camera_Data *camera_data          [[buffer(1)]],
+                            device const Voxel_Data *voxel_data            [[buffer(2)]]
                             ) {
+
+    // SHADERTOY TRANSLATION:                            
+    float4 iMouse = uni->cursor;
+    float2 iResolution = float2(grid_size);
+    float2 fragCoord = float2(gid);
+    float4 fragColor = float4(0.0, 0.0, 0.0, 1.0);
+    float iFrame = uni->flags[0]; // TODO: fix alignment
+    //===========================================================
+    RgnState rngState;
+    rngState.seed = uint(uint(fragCoord.x) * uint(1973) + uint(fragCoord.y) * uint(9277) + uint(iFrame) * uint(26699)) | uint(1);
+
+    float3 rayPosition = float3(0.0f, 0.0f, 0.0f);
+    float cameraDistance = 1.0f / tan(c_FOVDegrees * 0.5f * c_pi / 180.0f);
+    // calculate coordinates of the ray target on the imaginary pixel plane.
+    // -1 to +1 on x,y axis. 1 unit away on the z axis
+    float3 rayTarget = float3((fragCoord/iResolution.xy) * 2.0f - 1.0f, cameraDistance);
+     
+     float aspectRatio = iResolution.x / iResolution.y;
+    rayTarget.y /= -aspectRatio;
+
+    // calculate a normalized vector for the ray direction.
+    // it's pointing from the ray position to the ray target.
+    float3 rayDir = normalize(rayTarget - rayPosition);
+
+    float3 color = GetColorForRay(rayPosition, rayDir, &rngState);
  
-    if(uni->flags.x > 0.0) {
-        tex.write(half4(1.0h, 1.0h, 1.0h, 1.0h), gid);
-    } else {
-        float brush_size = 6.0;
-        float2 current_pos = float2(gid);  
-        half subline = smoothstep(-10.h, 10.h, half(sdSegment(current_pos, uni->line.xy, uni->line.zw, 3.0)));
-        half d = smoothstep(-16.h, 16.h, half(sdSegment(current_pos, uni->line.xy, uni->line.zw, brush_size)));
-        float distance_to_start = smoothstep(-brush_size, +brush_size, distance(current_pos, uni->line.xy));
+     // average the frames together
+    half4 lastFrameColor = tex.read(gid);
+    color = mix(float3(lastFrameColor.rgb), color, 1.0f / float(iFrame+1));
 
-        half4 prev_color = tex.read(gid);
+    // show the ray direction
+    fragColor = float4(color, 1.0f);
 
-        d = sqrt(d);
-
-        half m = prev_color.r * d; 
-        half commit = min(prev_color.g, prev_color.r);
-        
-
-        tex.write(half4(commit, m, min(prev_color.b, subline), 1.h), gid);
-    }
+    //===========================================================
+    tex.write(half4(fragColor), gid);
 }
 
-// GAUSSIAN KERNEL 5x5
-            // half acc; 
-            // acc += tex.read(gid  - uint2(-2, -2)).g;
-            // acc += tex.read(gid  - uint2(-1, -2)).g *  4;
-            // acc += tex.read(gid  - uint2( 0, -2)).g *  7;
-            // acc += tex.read(gid  - uint2( 1, -2)).g *  4;
-            // acc += tex.read(gid  - uint2( 2, -2)).g;
-
-            // acc += tex.read(gid  - uint2(-2, -1)).g *  4;
-            // acc += tex.read(gid  - uint2(-1, -1)).g * 16;
-            // acc += tex.read(gid  - uint2( 0, -1)).g * 26;
-            // acc += tex.read(gid  - uint2( 1, -1)).g * 16;
-            // acc += tex.read(gid  - uint2( 2, -1)).g *  4;
-
-            // acc += tex.read(gid  - uint2(-2,  0)).g *  7;
-            // acc += tex.read(gid  - uint2(-1,  0)).g * 26;
-            // acc += field                            * 41;
-            // acc += tex.read(gid  - uint2( 1,  0)).g * 26;
-            // acc += tex.read(gid  - uint2( 2,  0)).g *  7;
-
-            // acc += tex.read(gid  - uint2(-2,  1)).g *  4;
-            // acc += tex.read(gid  - uint2(-1,  1)).g * 16;
-            // acc += tex.read(gid  - uint2( 0,  1)).g * 26;
-            // acc += tex.read(gid  - uint2( 1,  1)).g * 16;
-            // acc += tex.read(gid  - uint2( 2,  1)).g *  4;
-
-            // acc += tex.read(gid  - uint2(-2,  2)).g;
-            // acc += tex.read(gid  - uint2(-1,  2)).g *  4;
-            // acc += tex.read(gid  - uint2( 0,  2)).g *  7;
-            // acc += tex.read(gid  - uint2( 1,  2)).g *  4;
-            // acc += tex.read(gid  - uint2( 2,  2)).g;
-
-            // float gaussian = float(acc) / 273.0;
-            // field = half(gaussian);
+// TODO: 
+// distance from line to point
+// Make Camera and Grid
+// Make raycast from mouse

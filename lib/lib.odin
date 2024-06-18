@@ -8,26 +8,24 @@ import MU "vendor:microui"
 import SDL "vendor:sdl2"
 
 import "core:fmt"
-import "core:time"
 import "core:math"
 import glm "core:math/linalg/glsl"
 import "core:mem"
 import "core:os"
+import "core:time"
 
+import engine "engine"
 import pipeline "pipeline"
 
 W_WIDTH :: 1024.0
 W_HEIGHT :: 1024.0
 BRUSH_SIZE :: 32.0
 
-Camera_Data :: struct #align (16) {
-	translation: glm.vec2,
-}
-
 AppState :: struct {
 	command_queue:    ^MTL.CommandQueue,
 	compute_uniform:  ^MTL.Buffer,
 	fragment_uniform: ^MTL.Buffer,
+	shader_data:      engine.Shader_Data,
 }
 
 appState := AppState{}
@@ -69,13 +67,18 @@ metal_main :: proc() -> (err: ^NS.Error) {
 	native_window->setOpaque(true)
 	native_window->setBackgroundColor(nil)
 
-	camera_buffer := device->newBuffer(size_of(Camera_Data), {.StorageModeManaged})
+	camera_buffer := device->newBuffer(size_of(engine.Camera_Data), {.StorageModeManaged})
 	defer camera_buffer->release()
 
-	appState.fragment_uniform = device->newBuffer(size_of(FragmentUniform), {.StorageModeManaged})
+	voxel_buffer := device->newBuffer(size_of(engine.Voxel_Data), {.StorageModeManaged})
+	defer voxel_buffer->release()
+
+	appState.fragment_uniform =
+	device->newBuffer(size_of(engine.FragmentUniform), {.StorageModeManaged})
 	defer appState.fragment_uniform->release()
 
-	appState.compute_uniform = device->newBuffer(size_of(ComputeUniform), {.StorageModeManaged})
+	appState.compute_uniform =
+	device->newBuffer(size_of(engine.ComputeUniform), {.StorageModeManaged})
 	defer appState.compute_uniform->release()
 
 	compute_pso := pipeline.build_compute_pipeline(
@@ -105,12 +108,15 @@ metal_main :: proc() -> (err: ^NS.Error) {
 		{1, -1, 0, 1},
 	}
 
-	uniform_data := appState.fragment_uniform->contentsAsType(FragmentUniform)
-	uniform_data.screen_size = {W_WIDTH, W_HEIGHT}
-	uniform_data.toggle_layer = {1.0, 1.0, 1.0, 1.0}
+	appState.shader_data.fragment_uniform =
+	appState.fragment_uniform->contentsAsType(engine.FragmentUniform)
 
-	compute_uniform_data := appState->compute_uniform->contentsAsType(ComputeUniform)
-	compute_uniform_data.flags = {1.0, 0.0, 0.0, 0.0}
+	appState.shader_data.camera = camera_buffer->contentsAsType(engine.Camera_Data);
+	appState.shader_data.voxel_data = camera_buffer->contentsAsType(engine.Voxel_Data);
+
+	appState.shader_data.compute_uniform =
+	appState->compute_uniform->contentsAsType(engine.ComputeUniform)
+	appState.shader_data.compute_uniform.flags = {0.0, 0.0, 0.0, 0.0}
 
 	position_buffer := device->newBufferWithSlice(positions[:], {})
 	defer position_buffer->release()
@@ -123,8 +129,9 @@ metal_main :: proc() -> (err: ^NS.Error) {
 
 	SDL.ShowWindow(window)
 	counter := 0
-	requires_computation := true
 	is_first_point := true
+
+	engine.init(&appState.shader_data, {W_WIDTH, W_HEIGHT})
 
 	start_tick := time.tick_now()
 	next_time := SDL.GetTicks() + 30
@@ -132,44 +139,19 @@ metal_main :: proc() -> (err: ^NS.Error) {
 	for quit := false; !quit; {
 
 		SDL.Delay(time_left(next_time))
-        next_time += 30;
+		next_time += 30
 
 		duration := time.tick_since(start_tick)
-		t := f32(time.duration_seconds(duration))
-		uniform_data.toggle_layer.x = t
+		elapsed_time := f32(time.duration_seconds(duration))
+
 		{
 			w, h: i32
 			SDL.GetWindowSize(window, &w, &h)
 			consumed := false
 			for e: SDL.Event; SDL.PollEvent(&e); {
+				engine.input(e, &appState.shader_data)
+
 				#partial switch e.type {
-				case .FINGERMOTION:
-					fmt.println("FINGER!!!")
-				case .MOUSEMOTION:
-					if (consumed || e.motion.state == 0) {
-						is_first_point = true
-						continue
-					}
-					consumed = true
-
-					new_pos: [2]f32 = {f32(e.motion.x), f32(e.motion.y)}
-
-					compute_uniform_data.line = {
-						uniform_data.cursor.z,
-						uniform_data.cursor.w,
-						new_pos.x,
-						new_pos.y,
-					}
-
-					uniform_data.cursor.x = new_pos.x / f32(w)
-					uniform_data.cursor.y = new_pos.y / f32(h)
-					uniform_data.cursor.zw = new_pos
-
-					if (!is_first_point) {
-						requires_computation = true
-					}
-					is_first_point = false
-
 				case .QUIT:
 					quit = true
 				case .KEYDOWN:
@@ -177,12 +159,13 @@ metal_main :: proc() -> (err: ^NS.Error) {
 					case .ESCAPE:
 						quit = true
 					case .SPACE:
-						requires_computation := true
-						compute_uniform_data.flags.x = 1.0
+						appState.shader_data.requires_computation = !appState.shader_data.requires_computation	
 					}
 				}
 			}
 		}
+
+		engine.update(elapsed_time, &appState.shader_data)
 
 		NS.scoped_autoreleasepool()
 
@@ -200,8 +183,7 @@ metal_main :: proc() -> (err: ^NS.Error) {
 		command_buffer := appState.command_queue->commandBuffer()
 
 		// -------------------------------------------------------------------------------------------
-		if (requires_computation) {
-			requires_computation = false
+		if (appState.shader_data.requires_computation) {
 			compute_encoder := command_buffer->computeCommandEncoder()
 
 			compute_encoder->setComputePipelineState(compute_pso)
@@ -209,6 +191,7 @@ metal_main :: proc() -> (err: ^NS.Error) {
 			compute_encoder->setTexture(shadow_texture, 1)
 			compute_encoder->setBuffer(appState->compute_uniform, offset = 0, index = 0)
 			compute_encoder->setBuffer(camera_buffer, offset = 0, index = 1)
+			compute_encoder->setBuffer(voxel_buffer, offset = 0, index = 2)
 
 			grid_size := MTL.Size{W_WIDTH, W_HEIGHT, 1}
 			thread_group_size := MTL.Size {
@@ -239,19 +222,16 @@ metal_main :: proc() -> (err: ^NS.Error) {
 		command_buffer->commit()
 		command_buffer->waitUntilCompleted()
 
-		compute_uniform_data.flags.x = 0.0
-		requires_computation = false
 	}
 
 	return nil
 }
 
-time_left :: proc(next_time: u32) -> u32
-{
-    now := SDL.GetTicks()
-    if(next_time <= now) {
-        return 0
+time_left :: proc(next_time: u32) -> u32 {
+	now := SDL.GetTicks()
+	if (next_time <= now) {
+		return 0
 	} else {
-        return next_time - now;
+		return next_time - now
 	}
 }
